@@ -128,16 +128,17 @@ export default function HomeClient() {
           </div>
         )}
 
-        {location.status === 'ready' && !fetching && bathrooms.length > 0 && (
-          <>
-            <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">
-              {bathrooms.length} bathroom{bathrooms.length === 1 ? '' : 's'} within {SEARCH_RADIUS_MILES} miles
-            </p>
-            {bathrooms.map(b => (
-              <BathroomCard key={b.id} bathroom={b} />
-            ))}
-          </>
-        )}
+        {location.status === 'ready' && !fetching && bathrooms.length > 0 && [
+          <p
+            key="nearby-header"
+            className="text-xs text-gray-400 font-medium uppercase tracking-wide"
+          >
+            {bathrooms.length} bathroom{bathrooms.length === 1 ? '' : 's'} within {SEARCH_RADIUS_MILES} miles
+          </p>,
+          ...bathrooms.map(b => (
+            <BathroomCard key={b.bathroom_id} bathroom={b} />
+          )),
+        ]}
       </main>
     </div>
   )

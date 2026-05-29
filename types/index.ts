@@ -1,5 +1,5 @@
 export type NearbyBathroom = {
-  id: string
+  bathroom_id: string
   name: string
   address: string | null
   city: string

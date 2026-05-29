@@ -61,7 +61,7 @@ export default function BathroomCard({ bathroom }: Props) {
           Directions
         </a>
         <Link
-          href={`/review/${bathroom.id}?name=${encodeURIComponent(bathroom.name)}`}
+          href={`/review/${bathroom.bathroom_id}?name=${encodeURIComponent(bathroom.name)}`}
           className="flex-1 text-center py-2 px-3 rounded-lg bg-amber-500 text-white text-sm font-medium hover:bg-amber-600 active:bg-amber-700 transition-colors"
         >
           Review
