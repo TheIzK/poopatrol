@@ -42,22 +42,37 @@ export default function HomeClient() {
 
   useEffect(() => {
     if (location.status !== 'ready') return
-    setFetching(true)
-    setFetchError(null)
-    supabase
-      .rpc('nearby_bathrooms', {
-        user_lat: location.lat,
-        user_lng: location.lng,
+
+    const latitude = location.lat
+    const longitude = location.lng
+    let cancelled = false
+
+    async function loadNearbyBathrooms() {
+      setFetching(true)
+      setFetchError(null)
+
+      const { data, error } = await supabase.rpc('nearby_bathrooms', {
+        user_lat: latitude,
+        user_lng: longitude,
         radius_miles: SEARCH_RADIUS_MILES,
       })
-      .then(({ data, error }) => {
-        if (error) {
-          setFetchError(error.message)
-        } else {
-          setBathrooms((data as NearbyBathroom[]) ?? [])
-        }
-        setFetching(false)
-      })
+
+      if (cancelled) return
+
+      if (error) {
+        setFetchError(error.message)
+        setBathrooms([])
+      } else {
+        setBathrooms((data as NearbyBathroom[]) ?? [])
+      }
+      setFetching(false)
+    }
+
+    loadNearbyBathrooms()
+
+    return () => {
+      cancelled = true
+    }
   }, [location])
 
   return (
