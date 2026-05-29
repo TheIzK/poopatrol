@@ -13,6 +13,8 @@ type LocationState =
   | { status: 'denied' }
   | { status: 'ready'; lat: number; lng: number }
 
+const SEARCH_RADIUS_MILES = 100
+
 export default function HomeClient() {
   const searchParams = useSearchParams()
   const submitted = searchParams.get('submitted')
@@ -46,7 +48,7 @@ export default function HomeClient() {
       .rpc('nearby_bathrooms', {
         user_lat: location.lat,
         user_lng: location.lng,
-        radius_miles: 10,
+        radius_miles: SEARCH_RADIUS_MILES,
       })
       .then(({ data, error }) => {
         if (error) {
@@ -116,7 +118,7 @@ export default function HomeClient() {
 
         {location.status === 'ready' && !fetching && !fetchError && bathrooms.length === 0 && (
           <div className="text-center py-16 flex flex-col gap-3">
-            <p className="text-gray-500 text-sm">No bathrooms found within 10 miles.</p>
+            <p className="text-gray-500 text-sm">No bathrooms found within {SEARCH_RADIUS_MILES} miles.</p>
             <Link
               href="/add-bathroom"
               className="mx-auto text-amber-600 font-medium text-sm underline underline-offset-2"
@@ -129,7 +131,7 @@ export default function HomeClient() {
         {location.status === 'ready' && !fetching && bathrooms.length > 0 && (
           <>
             <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">
-              {bathrooms.length} bathroom{bathrooms.length === 1 ? '' : 's'} within 10 miles
+              {bathrooms.length} bathroom{bathrooms.length === 1 ? '' : 's'} within {SEARCH_RADIUS_MILES} miles
             </p>
             {bathrooms.map(b => (
               <BathroomCard key={b.id} bathroom={b} />
