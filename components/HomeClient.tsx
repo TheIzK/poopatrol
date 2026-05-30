@@ -13,7 +13,22 @@ type LocationState =
   | { status: 'denied' }
   | { status: 'ready'; lat: number; lng: number }
 
-const SEARCH_RADIUS_MILES = 100
+type RadiusOption = {
+  label: string
+  value: number
+  display: string  // used in results header
+}
+
+const RADIUS_OPTIONS: RadiusOption[] = [
+  { label: '1 mi', value: 1, display: 'within 1 mile' },
+  { label: '5 mi', value: 5, display: 'within 5 miles' },
+  { label: '10 mi', value: 10, display: 'within 10 miles' },
+  { label: '25 mi', value: 25, display: 'within 25 miles' },
+  { label: '50 mi', value: 50, display: 'within 50 miles' },
+  { label: '100 mi', value: 100, display: 'within 100 miles' },
+]
+
+const DEFAULT_RADIUS = RADIUS_OPTIONS[1] // 5 miles
 
 export default function HomeClient() {
   const searchParams = useSearchParams()
@@ -21,6 +36,7 @@ export default function HomeClient() {
   const added = searchParams.get('added')
 
   const [location, setLocation] = useState<LocationState>({ status: 'idle' })
+  const [radius, setRadius] = useState<RadiusOption>(DEFAULT_RADIUS)
   const [locations, setLocations] = useState<RestroomLocationSummary[]>([])
   const [fetching, setFetching] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
@@ -28,17 +44,13 @@ export default function HomeClient() {
   function requestLocation() {
     setLocation({ status: 'loading' })
     navigator.geolocation.getCurrentPosition(
-      pos => {
-        setLocation({ status: 'ready', lat: pos.coords.latitude, lng: pos.coords.longitude })
-      },
+      pos => setLocation({ status: 'ready', lat: pos.coords.latitude, lng: pos.coords.longitude }),
       () => setLocation({ status: 'denied' }),
       { timeout: 10000 }
     )
   }
 
-  useEffect(() => {
-    requestLocation()
-  }, [])
+  useEffect(() => { requestLocation() }, [])
 
   useEffect(() => {
     if (location.status !== 'ready') return
@@ -53,7 +65,7 @@ export default function HomeClient() {
       const { data, error } = await supabase.rpc('nearby_restroom_locations', {
         user_lat: lat,
         user_lng: lng,
-        radius_miles: SEARCH_RADIUS_MILES,
+        radius_miles: radius.value,
       })
 
       if (cancelled) return
@@ -69,10 +81,11 @@ export default function HomeClient() {
 
     load()
     return () => { cancelled = true }
-  }, [location])
+  }, [location, radius])
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {/* Header */}
       <header className="bg-amber-500 text-white px-4 py-3 flex items-center justify-between sticky top-0 z-10 shadow-sm">
         <div className="flex items-center gap-2">
           <span className="text-xl">💩</span>
@@ -85,6 +98,26 @@ export default function HomeClient() {
           + Add
         </Link>
       </header>
+
+      {/* Radius filter bar */}
+      {location.status === 'ready' && (
+        <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center gap-2 overflow-x-auto no-scrollbar">
+          <span className="text-xs text-gray-400 shrink-0">Distance:</span>
+          {RADIUS_OPTIONS.map(opt => (
+            <button
+              key={opt.label}
+              onClick={() => setRadius(opt)}
+              className={`shrink-0 px-3 py-1 rounded-full text-xs font-medium border transition-colors ${
+                radius.label === opt.label
+                  ? 'bg-amber-500 border-amber-500 text-white'
+                  : 'bg-white border-gray-300 text-gray-600 hover:border-amber-400'
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <main className="px-4 py-4 max-w-lg mx-auto flex flex-col gap-4">
         {submitted && (
@@ -118,7 +151,7 @@ export default function HomeClient() {
         )}
 
         {location.status === 'ready' && fetching && (
-          <div className="text-center py-16 text-gray-400 text-sm">Finding restrooms nearby…</div>
+          <div className="text-center py-16 text-gray-400 text-sm">Finding restrooms…</div>
         )}
 
         {location.status === 'ready' && !fetching && fetchError && (
@@ -129,7 +162,7 @@ export default function HomeClient() {
 
         {location.status === 'ready' && !fetching && !fetchError && locations.length === 0 && (
           <div className="text-center py-16 flex flex-col gap-3">
-            <p className="text-gray-500 text-sm">No restrooms found within {SEARCH_RADIUS_MILES} miles.</p>
+            <p className="text-gray-500 text-sm">No restrooms found {radius.display}.</p>
             <Link
               href="/add-bathroom"
               className="mx-auto text-amber-600 font-medium text-sm underline underline-offset-2"
@@ -142,7 +175,7 @@ export default function HomeClient() {
         {location.status === 'ready' && !fetching && locations.length > 0 && (
           <>
             <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">
-              {locations.length} restroom{locations.length === 1 ? '' : 's'} within {SEARCH_RADIUS_MILES} miles
+              {locations.length} restroom{locations.length === 1 ? '' : 's'} {radius.display}
             </p>
             {locations.map(loc => (
               <LocationCard key={loc.id} location={loc} />

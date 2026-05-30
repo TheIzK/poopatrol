@@ -50,6 +50,11 @@ CREATE INDEX IF NOT EXISTS restroom_locations_geo_idx
 CREATE INDEX IF NOT EXISTS restroom_reviews_location_idx
   ON restroom_reviews (location_id);
 
+-- Unique constraint so the seed script can upsert safely without creating duplicates
+ALTER TABLE restroom_locations
+  ADD CONSTRAINT IF NOT EXISTS restroom_locations_source_unique
+  UNIQUE (source, source_id);
+
 -- ── Summary view ─────────────────────────────────────────────────────────────
 -- Aggregates all reviews per location. Locations with zero reviews will have
 -- review_count = 0 and average_rating = NULL (not 0). Never treat NULL as bad.
