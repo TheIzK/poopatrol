@@ -33,9 +33,12 @@ export default function LocationCard({ location }: Props) {
   const typeEmoji = LOCATION_TYPE_EMOJI[location.location_type] ?? '📍'
   const meta = location.metadata ?? {}
 
-  const photoUrl = meta.google_photo_name
-    ? `/api/photo?ref=${encodeURIComponent(meta.google_photo_name)}`
-    : null
+  // Prefer stored Supabase CDN URL; fall back to proxy for newly enriched locations
+  const photoUrl = meta.photo_url
+    ? (meta.photo_url as string)
+    : meta.google_photo_name
+      ? `/api/photo?ref=${encodeURIComponent(meta.google_photo_name as string)}`
+      : null
 
   const logoUrl = !logoError ? getBrandLogoUrl(location.brand) : null
 
