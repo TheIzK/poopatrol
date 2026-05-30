@@ -1,76 +1,91 @@
-export type NearbyBathroom = {
-  bathroom_id: string
-  name: string
-  address: string | null
-  city: string
-  state: string
-  lat: number
-  lng: number
-  interstate: string | null
-  exit_number: string | null
-  bathroom_type: string | null
-  distance_miles: number
-  poo_score: number | null
-  review_count: number
+export type LocationType =
+  | 'gas_station'
+  | 'truck_stop'
+  | 'rest_stop'
+  | 'travel_center'
+  | 'restaurant'
+  | 'store'
+  | 'park'
+  | 'public_building'
+  | 'public_restroom'
+  | 'other'
+  | 'unknown'
+
+export const LOCATION_TYPE_LABELS: Record<LocationType, string> = {
+  gas_station: 'Gas Station',
+  truck_stop: 'Truck Stop',
+  rest_stop: 'Rest Stop',
+  travel_center: 'Travel Center',
+  restaurant: 'Restaurant',
+  store: 'Store',
+  park: 'Park',
+  public_building: 'Public Building',
+  public_restroom: 'Public Restroom',
+  other: 'Other',
+  unknown: 'Unknown',
 }
 
-export type PooRating = 1 | 2 | 3
-
-export type PositiveTag =
-  | 'clean'
-  | 'tp_stocked'
-  | 'soap_available'
-  | 'towels_or_dryer'
-  | 'lock_worked'
-  | 'good_privacy'
-  | 'easy_to_find'
-  | 'easy_highway_access'
-  | 'plenty_stalls'
-  | 'felt_safe'
-  | 'changing_table'
-  | 'kid_friendly'
-  | 'well_lit'
-  | 'single_user_or_family'
-
-export type IssueTag =
-  | 'dirty'
-  | 'no_tp'
-  | 'no_soap'
-  | 'no_towels_or_dryer'
-  | 'broken_lock'
-  | 'poor_privacy'
-  | 'hard_to_find'
-  | 'hard_highway_access'
-  | 'long_line'
-  | 'felt_unsafe'
-  | 'not_public'
-  | 'closed'
-
-export type Bathroom = {
+export type RestroomLocation = {
   id: string
   name: string
+  location_type: LocationType
+  brand: string | null
   address: string | null
-  city: string
-  state: string
   lat: number
   lng: number
-  interstate: string | null
-  exit_number: string | null
-  bathroom_type: string | null
-  created_by: string | null
-  is_seed_data: boolean
-  data_source: string
+  source: string | null
+  source_id: string | null
+  osm_type: string | null
+  osm_id: string | null
+  seeded: boolean
   created_at: string
+  updated_at: string
 }
 
-export type AddBathroomFormData = {
+export type RestroomLocationSummary = {
+  id: string
   name: string
+  location_type: LocationType
+  brand: string | null
+  address: string | null
+  lat: number
+  lng: number
+  source: string | null
+  seeded: boolean
+  review_count: number
+  average_rating: number | null
+  average_cleanliness_rating: number | null
+  last_reviewed_at: string | null
+  distance_miles: number
+}
+
+export type RestroomReview = {
+  id: string
+  location_id: string
+  user_id: string | null
+  overall_rating: 1 | 2 | 3 | 4 | 5
+  cleanliness_rating: (1 | 2 | 3 | 4 | 5) | null
+  bathroom_open: boolean | null
+  public_access: boolean | null
+  customers_only: boolean | null
+  key_required: boolean | null
+  tp_available: boolean | null
+  soap_available: boolean | null
+  hand_dryer_or_towels: boolean | null
+  accessible: boolean | null
+  changing_table: boolean | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export type OverallRating = 1 | 2 | 3 | 4 | 5
+
+export type AddLocationFormData = {
+  name: string
+  location_type: LocationType | ''
+  brand: string
   address: string
-  city: string
-  state: string
   lat: string
   lng: string
-  interstate: string
-  exit_number: string
-  bathroom_type: string
 }

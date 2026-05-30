@@ -10,7 +10,7 @@ type Props = {
 export default async function ReviewPage({ params, searchParams }: Props) {
   const { id } = await params
   const { name } = await searchParams
-  const bathroomName = name ? decodeURIComponent(name) : 'This Bathroom'
+  const locationName = name ? decodeURIComponent(name) : 'This Location'
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -21,7 +21,7 @@ export default async function ReviewPage({ params, searchParams }: Props) {
         <span className="font-bold text-lg tracking-tight">Write a Review</span>
       </header>
       <Suspense fallback={<div className="p-4 text-gray-400 text-sm">Loading…</div>}>
-        <ReviewForm bathroomId={id} bathroomName={bathroomName} />
+        <ReviewForm locationId={id} locationName={locationName} />
       </Suspense>
     </div>
   )

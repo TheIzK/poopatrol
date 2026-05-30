@@ -1,78 +1,77 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { PooRating, PositiveTag, IssueTag } from '@/types'
+import { OverallRating } from '@/types'
 
-const POSITIVE_TAGS: { key: PositiveTag; label: string }[] = [
-  { key: 'clean', label: 'Clean' },
-  { key: 'tp_stocked', label: 'TP Stocked' },
+const RATINGS: { value: OverallRating; label: string }[] = [
+  { value: 1, label: 'Poor' },
+  { value: 2, label: 'Fair' },
+  { value: 3, label: 'Okay' },
+  { value: 4, label: 'Good' },
+  { value: 5, label: 'Excellent' },
+]
+
+type BooleanField =
+  | 'bathroom_open'
+  | 'public_access'
+  | 'tp_available'
+  | 'soap_available'
+  | 'hand_dryer_or_towels'
+  | 'accessible'
+  | 'changing_table'
+  | 'customers_only'
+  | 'key_required'
+
+const AMENITY_CHIPS: { key: BooleanField; label: string }[] = [
+  { key: 'bathroom_open', label: 'Bathroom Open' },
+  { key: 'public_access', label: 'Public Access' },
+  { key: 'tp_available', label: 'TP Available' },
   { key: 'soap_available', label: 'Soap Available' },
-  { key: 'towels_or_dryer', label: 'Towels/Dryer' },
-  { key: 'lock_worked', label: 'Lock Worked' },
-  { key: 'good_privacy', label: 'Good Privacy' },
-  { key: 'easy_to_find', label: 'Easy to Find' },
-  { key: 'easy_highway_access', label: 'Easy Highway Access' },
-  { key: 'plenty_stalls', label: 'Plenty of Stalls' },
-  { key: 'felt_safe', label: 'Felt Safe' },
+  { key: 'hand_dryer_or_towels', label: 'Hand Dryer/Towels' },
+  { key: 'accessible', label: 'Accessible' },
   { key: 'changing_table', label: 'Changing Table' },
-  { key: 'kid_friendly', label: 'Kid Friendly' },
-  { key: 'well_lit', label: 'Well Lit' },
-  { key: 'single_user_or_family', label: 'Single/Family Room' },
 ]
 
-const ISSUE_TAGS: { key: IssueTag; label: string }[] = [
-  { key: 'dirty', label: 'Dirty' },
-  { key: 'no_tp', label: 'No TP' },
-  { key: 'no_soap', label: 'No Soap' },
-  { key: 'no_towels_or_dryer', label: 'No Towels/Dryer' },
-  { key: 'broken_lock', label: 'Broken Lock' },
-  { key: 'poor_privacy', label: 'Poor Privacy' },
-  { key: 'hard_to_find', label: 'Hard to Find' },
-  { key: 'hard_highway_access', label: 'Hard Highway Access' },
-  { key: 'long_line', label: 'Long Line' },
-  { key: 'felt_unsafe', label: 'Felt Unsafe' },
-  { key: 'not_public', label: 'Not Public' },
-  { key: 'closed', label: 'Closed' },
-]
-
-const POO_RATINGS: { value: PooRating; emoji: string; label: string }[] = [
-  { value: 1, emoji: '💩', label: 'Dump' },
-  { value: 2, emoji: '😐', label: 'Gets It Moving' },
-  { value: 3, emoji: '✨', label: 'No Wiper' },
+const ISSUE_CHIPS: { key: BooleanField; label: string }[] = [
+  { key: 'customers_only', label: 'Customers Only' },
+  { key: 'key_required', label: 'Key Required' },
 ]
 
 type Props = {
-  bathroomId: string
-  bathroomName: string
+  locationId: string
+  locationName: string
 }
 
 type AuthStep = 'form' | 'magic-link'
 
-export default function ReviewForm({ bathroomId, bathroomName }: Props) {
+export default function ReviewForm({ locationId, locationName }: Props) {
   const router = useRouter()
-  const [pooRating, setPooRating] = useState<PooRating | null>(null)
-  const [positiveTags, setPositiveTags] = useState<Set<PositiveTag>>(new Set())
-  const [issueTags, setIssueTags] = useState<Set<IssueTag>>(new Set())
+  const [overallRating, setOverallRating] = useState<OverallRating | null>(null)
+  const [cleanlinessRating, setCleanlinessRating] = useState<OverallRating | null>(null)
+  const [checkedFields, setCheckedFields] = useState<Set<BooleanField>>(new Set())
+  const [notes, setNotes] = useState('')
   const [authStep, setAuthStep] = useState<AuthStep>('form')
   const [email, setEmail] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [magicLinkSent, setMagicLinkSent] = useState(false)
+  const [signedInAs, setSignedInAs] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  function togglePositive(tag: PositiveTag) {
-    setPositiveTags(prev => {
-      const next = new Set(prev)
-      next.has(tag) ? next.delete(tag) : next.add(tag)
-      return next
+  // Surface existing session in the UI so user knows they don't need to re-auth
+  useEffect(() => {
+    supabase.auth.getUser().then(({ data: { user } }) => {
+      if (user) {
+        setSignedInAs(user.email ?? (user.is_anonymous ? 'anonymous' : user.id.slice(0, 8)))
+      }
     })
-  }
+  }, [])
 
-  function toggleIssue(tag: IssueTag) {
-    setIssueTags(prev => {
+  function toggleField(field: BooleanField) {
+    setCheckedFields(prev => {
       const next = new Set(prev)
-      next.has(tag) ? next.delete(tag) : next.add(tag)
+      next.has(field) ? next.delete(field) : next.add(field)
       return next
     })
   }
@@ -81,55 +80,45 @@ export default function ReviewForm({ bathroomId, bathroomName }: Props) {
     const { data: { user } } = await supabase.auth.getUser()
     if (user) return user.id
 
-    // Try anonymous auth first
     const { data: anonData, error: anonError } = await supabase.auth.signInAnonymously()
-    if (!anonError && anonData.user) return anonData.user.id
+    if (!anonError && anonData.user) {
+      setSignedInAs('anonymous')
+      return anonData.user.id
+    }
 
-    // Fall back to magic link flow
     setAuthStep('magic-link')
     return null
   }
 
   async function submitReview(userId: string) {
-    const pos = Array.from(positiveTags)
-    const issues = Array.from(issueTags)
-
-    let reviewLat: number | null = null
-    let reviewLng: number | null = null
-    try {
-      const pos2d = await new Promise<GeolocationPosition>((resolve, reject) =>
-        navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 })
-      )
-      reviewLat = pos2d.coords.latitude
-      reviewLng = pos2d.coords.longitude
-    } catch {
-      // location optional for review
+    const boolFields: Partial<Record<BooleanField, boolean>> = {}
+    for (const field of checkedFields) {
+      boolFields[field] = true
     }
 
-    const { error: insertError } = await supabase.from('reviews').upsert({
-      bathroom_id: bathroomId,
+    const { error: insertError } = await supabase.from('restroom_reviews').insert({
+      location_id: locationId,
       user_id: userId,
-      poo_rating: pooRating,
-      positive_tags: pos,
-      issue_tags: issues,
-      review_lat: reviewLat,
-      review_lng: reviewLng,
-    }, { onConflict: 'bathroom_id,user_id' })
+      overall_rating: overallRating,
+      cleanliness_rating: cleanlinessRating ?? null,
+      notes: notes.trim() || null,
+      ...boolFields,
+    })
 
     if (insertError) throw insertError
   }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!pooRating) {
-      setError('Please select a poo rating.')
+    if (!overallRating) {
+      setError('Please select an overall rating.')
       return
     }
     setError(null)
     setSubmitting(true)
     try {
       const userId = await ensureAuth()
-      if (!userId) return // switched to magic link flow
+      if (!userId) return
       await submitReview(userId)
       router.push('/?submitted=1')
     } catch (err) {
@@ -161,10 +150,12 @@ export default function ReviewForm({ bathroomId, bathroomName }: Props) {
     return (
       <div className="p-4 max-w-md mx-auto">
         <h2 className="text-lg font-semibold mb-1">Sign in to submit</h2>
-        <p className="text-sm text-gray-500 mb-4">We&apos;ll send you a magic link — no password needed.</p>
+        <p className="text-sm text-gray-500 mb-4">
+          We&apos;ll email you a magic link — no password, and you&apos;ll stay signed in for future reviews.
+        </p>
         {magicLinkSent ? (
           <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-green-800 text-sm">
-            Check your email for a sign-in link. Come back after clicking it to submit your review.
+            Check your email and click the link to sign in. You&apos;ll be brought back here automatically.
           </div>
         ) : (
           <form onSubmit={handleMagicLink} className="flex flex-col gap-3">
@@ -191,74 +182,124 @@ export default function ReviewForm({ bathroomId, bathroomName }: Props) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="p-4 max-w-md mx-auto flex flex-col gap-6">
+    <form onSubmit={handleSubmit} className="p-4 max-w-md mx-auto flex flex-col gap-6 pb-10">
+      {/* Location name */}
       <div>
         <p className="text-xs uppercase tracking-wide text-gray-400 font-semibold mb-1">Reviewing</p>
-        <p className="font-semibold text-gray-900">{bathroomName}</p>
+        <p className="font-semibold text-gray-900">{locationName}</p>
+        {signedInAs && signedInAs !== 'anonymous' && (
+          <p className="text-xs text-gray-400 mt-1">Signed in as {signedInAs}</p>
+        )}
       </div>
 
-      {/* Poo Rating */}
+      {/* Overall Rating (required) */}
       <div>
-        <p className="text-sm font-semibold text-gray-700 mb-2">Rating <span className="text-red-500">*</span></p>
+        <p className="text-sm font-semibold text-gray-700 mb-2">
+          Overall Rating <span className="text-red-500">*</span>
+        </p>
         <div className="flex gap-2">
-          {POO_RATINGS.map(r => (
+          {RATINGS.map(r => (
             <button
               key={r.value}
               type="button"
-              onClick={() => setPooRating(r.value)}
+              onClick={() => setOverallRating(r.value)}
               className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-xl border-2 transition-colors ${
-                pooRating === r.value
+                overallRating === r.value
                   ? 'border-amber-500 bg-amber-50'
                   : 'border-gray-200 bg-white'
               }`}
             >
-              <span className="text-2xl">{r.emoji}</span>
-              <span className="text-xs font-medium text-gray-700 text-center leading-tight">{r.label}</span>
+              <span className={`text-lg font-bold ${overallRating === r.value ? 'text-amber-600' : 'text-gray-400'}`}>
+                {r.value}
+              </span>
+              <span className="text-xs text-gray-600 text-center leading-tight">{r.label}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Positive Tags */}
+      {/* Cleanliness Rating (optional) */}
       <div>
-        <p className="text-sm font-semibold text-gray-700 mb-2">What was good?</p>
-        <div className="flex flex-wrap gap-2">
-          {POSITIVE_TAGS.map(t => (
+        <p className="text-sm font-semibold text-gray-700 mb-2">
+          Cleanliness <span className="text-gray-400 font-normal">(optional)</span>
+        </p>
+        <div className="flex gap-2">
+          {RATINGS.map(r => (
             <button
-              key={t.key}
+              key={r.value}
               type="button"
-              onClick={() => togglePositive(t.key)}
+              onClick={() => setCleanlinessRating(prev => prev === r.value ? null : r.value)}
+              className={`flex-1 flex flex-col items-center gap-1 py-2 rounded-xl border-2 transition-colors ${
+                cleanlinessRating === r.value
+                  ? 'border-blue-400 bg-blue-50'
+                  : 'border-gray-200 bg-white'
+              }`}
+            >
+              <span className={`text-sm font-bold ${cleanlinessRating === r.value ? 'text-blue-600' : 'text-gray-400'}`}>
+                {r.value}
+              </span>
+              <span className="text-xs text-gray-500 text-center leading-tight">{r.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Amenity chips */}
+      <div>
+        <p className="text-sm font-semibold text-gray-700 mb-2">What&apos;s available?</p>
+        <p className="text-xs text-gray-400 mb-2">Only check what you observed — unchecked means unknown.</p>
+        <div className="flex flex-wrap gap-2">
+          {AMENITY_CHIPS.map(c => (
+            <button
+              key={c.key}
+              type="button"
+              onClick={() => toggleField(c.key)}
               className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
-                positiveTags.has(t.key)
+                checkedFields.has(c.key)
                   ? 'bg-green-100 border-green-400 text-green-800 font-medium'
                   : 'bg-white border-gray-300 text-gray-600'
               }`}
             >
-              {t.label}
+              {checkedFields.has(c.key) ? '✓ ' : ''}{c.label}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Issue Tags */}
+      {/* Issue chips */}
       <div>
-        <p className="text-sm font-semibold text-gray-700 mb-2">Any issues?</p>
+        <p className="text-sm font-semibold text-gray-700 mb-2">Any restrictions?</p>
         <div className="flex flex-wrap gap-2">
-          {ISSUE_TAGS.map(t => (
+          {ISSUE_CHIPS.map(c => (
             <button
-              key={t.key}
+              key={c.key}
               type="button"
-              onClick={() => toggleIssue(t.key)}
+              onClick={() => toggleField(c.key)}
               className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
-                issueTags.has(t.key)
+                checkedFields.has(c.key)
                   ? 'bg-red-100 border-red-400 text-red-800 font-medium'
                   : 'bg-white border-gray-300 text-gray-600'
               }`}
             >
-              {t.label}
+              {checkedFields.has(c.key) ? '✓ ' : ''}{c.label}
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Notes */}
+      <div>
+        <p className="text-sm font-semibold text-gray-700 mb-2">
+          Notes <span className="text-gray-400 font-normal">(optional)</span>
+        </p>
+        <textarea
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+          placeholder="Anything else worth knowing…"
+          rows={3}
+          maxLength={500}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
+        />
       </div>
 
       {error && <p className="text-red-500 text-sm">{error}</p>}

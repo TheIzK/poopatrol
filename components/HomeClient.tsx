@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { NearbyBathroom } from '@/types'
-import BathroomCard from '@/components/BathroomCard'
+import { RestroomLocationSummary } from '@/types'
+import LocationCard from '@/components/LocationCard'
 
 type LocationState =
   | { status: 'idle' }
@@ -21,7 +21,7 @@ export default function HomeClient() {
   const added = searchParams.get('added')
 
   const [location, setLocation] = useState<LocationState>({ status: 'idle' })
-  const [bathrooms, setBathrooms] = useState<NearbyBathroom[]>([])
+  const [locations, setLocations] = useState<RestroomLocationSummary[]>([])
   const [fetching, setFetching] = useState(false)
   const [fetchError, setFetchError] = useState<string | null>(null)
 
@@ -43,17 +43,16 @@ export default function HomeClient() {
   useEffect(() => {
     if (location.status !== 'ready') return
 
-    const latitude = location.lat
-    const longitude = location.lng
+    const { lat, lng } = location
     let cancelled = false
 
-    async function loadNearbyBathrooms() {
+    async function load() {
       setFetching(true)
       setFetchError(null)
 
-      const { data, error } = await supabase.rpc('nearby_bathrooms', {
-        user_lat: latitude,
-        user_lng: longitude,
+      const { data, error } = await supabase.rpc('nearby_restroom_locations', {
+        user_lat: lat,
+        user_lng: lng,
         radius_miles: SEARCH_RADIUS_MILES,
       })
 
@@ -61,18 +60,15 @@ export default function HomeClient() {
 
       if (error) {
         setFetchError(error.message)
-        setBathrooms([])
+        setLocations([])
       } else {
-        setBathrooms((data as NearbyBathroom[]) ?? [])
+        setLocations((data as RestroomLocationSummary[]) ?? [])
       }
       setFetching(false)
     }
 
-    loadNearbyBathrooms()
-
-    return () => {
-      cancelled = true
-    }
+    load()
+    return () => { cancelled = true }
   }, [location])
 
   return (
@@ -98,7 +94,7 @@ export default function HomeClient() {
         )}
         {added && (
           <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 text-green-800 text-sm font-medium">
-            Bathroom added — thanks for contributing!
+            Location added — thanks for contributing!
           </div>
         )}
 
@@ -110,7 +106,7 @@ export default function HomeClient() {
           <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-6 text-center flex flex-col gap-3">
             <p className="text-yellow-800 font-medium">Location access needed</p>
             <p className="text-yellow-700 text-sm">
-              PooPatrol needs your location to find nearby bathrooms. Please allow access in your browser settings.
+              PooPatrol needs your location to find nearby restrooms.
             </p>
             <button
               onClick={requestLocation}
@@ -122,18 +118,18 @@ export default function HomeClient() {
         )}
 
         {location.status === 'ready' && fetching && (
-          <div className="text-center py-16 text-gray-400 text-sm">Finding bathrooms nearby…</div>
+          <div className="text-center py-16 text-gray-400 text-sm">Finding restrooms nearby…</div>
         )}
 
         {location.status === 'ready' && !fetching && fetchError && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-4 text-red-700 text-sm">
-            Failed to load bathrooms: {fetchError}
+            Failed to load: {fetchError}
           </div>
         )}
 
-        {location.status === 'ready' && !fetching && !fetchError && bathrooms.length === 0 && (
+        {location.status === 'ready' && !fetching && !fetchError && locations.length === 0 && (
           <div className="text-center py-16 flex flex-col gap-3">
-            <p className="text-gray-500 text-sm">No bathrooms found within {SEARCH_RADIUS_MILES} miles.</p>
+            <p className="text-gray-500 text-sm">No restrooms found within {SEARCH_RADIUS_MILES} miles.</p>
             <Link
               href="/add-bathroom"
               className="mx-auto text-amber-600 font-medium text-sm underline underline-offset-2"
@@ -143,17 +139,16 @@ export default function HomeClient() {
           </div>
         )}
 
-        {location.status === 'ready' && !fetching && bathrooms.length > 0 && [
-          <p
-            key="nearby-header"
-            className="text-xs text-gray-400 font-medium uppercase tracking-wide"
-          >
-            {bathrooms.length} bathroom{bathrooms.length === 1 ? '' : 's'} within {SEARCH_RADIUS_MILES} miles
-          </p>,
-          ...bathrooms.map(b => (
-            <BathroomCard key={b.bathroom_id} bathroom={b} />
-          )),
-        ]}
+        {location.status === 'ready' && !fetching && locations.length > 0 && (
+          <>
+            <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">
+              {locations.length} restroom{locations.length === 1 ? '' : 's'} within {SEARCH_RADIUS_MILES} miles
+            </p>
+            {locations.map(loc => (
+              <LocationCard key={loc.id} location={loc} />
+            ))}
+          </>
+        )}
       </main>
     </div>
   )
