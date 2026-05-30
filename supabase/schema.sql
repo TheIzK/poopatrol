@@ -51,9 +51,15 @@ CREATE INDEX IF NOT EXISTS restroom_reviews_location_idx
   ON restroom_reviews (location_id);
 
 -- Unique constraint so the seed script can upsert safely without creating duplicates
-ALTER TABLE restroom_locations
-  ADD CONSTRAINT IF NOT EXISTS restroom_locations_source_unique
-  UNIQUE (source, source_id);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'restroom_locations_source_unique'
+  ) THEN
+    ALTER TABLE restroom_locations
+      ADD CONSTRAINT restroom_locations_source_unique UNIQUE (source, source_id);
+  END IF;
+END $$;
 
 -- ── Summary view ─────────────────────────────────────────────────────────────
 -- Aggregates all reviews per location. Locations with zero reviews will have
