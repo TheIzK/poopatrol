@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS restroom_reviews (
 -- PostGIS geography index for fast radius queries
 CREATE INDEX IF NOT EXISTS restroom_locations_geo_idx
   ON restroom_locations
-  USING gist (ST_SetSRID(ST_MakePoint(lng, lat), 4326)::geography);
+  USING gist (ST_SetSRID(ST_MakePoint(lng, lat), 4326));
 
 CREATE INDEX IF NOT EXISTS restroom_reviews_location_idx
   ON restroom_reviews (location_id);
