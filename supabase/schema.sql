@@ -1,12 +1,20 @@
 -- PooPatrol schema
 -- Run this in the Supabase SQL editor.
+-- Safe to re-run: drops and recreates everything cleanly.
 
--- ── Tables ──────────────────────────────────────────────────────────────────
+-- ── Reset ────────────────────────────────────────────────────────────────────
 
-CREATE TABLE IF NOT EXISTS restroom_locations (
-  id              UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
-  name            TEXT          NOT NULL,
-  location_type   TEXT          NOT NULL DEFAULT 'unknown',
+DROP FUNCTION IF EXISTS nearby_restroom_locations(DOUBLE PRECISION, DOUBLE PRECISION, DOUBLE PRECISION);
+DROP VIEW  IF EXISTS restroom_location_summary;
+DROP TABLE IF EXISTS restroom_reviews   CASCADE;
+DROP TABLE IF EXISTS restroom_locations CASCADE;
+
+-- ── Tables ───────────────────────────────────────────────────────────────────
+
+CREATE TABLE restroom_locations (
+  id              UUID             PRIMARY KEY DEFAULT gen_random_uuid(),
+  name            TEXT             NOT NULL,
+  location_type   TEXT             NOT NULL DEFAULT 'unknown',
   brand           TEXT,
   address         TEXT,
   lat             DOUBLE PRECISION NOT NULL,
@@ -15,17 +23,19 @@ CREATE TABLE IF NOT EXISTS restroom_locations (
   source_id       TEXT,
   osm_type        TEXT,
   osm_id          TEXT,
-  seeded          BOOLEAN       NOT NULL DEFAULT false,
-  created_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-  updated_at      TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+  seeded          BOOLEAN          NOT NULL DEFAULT false,
+  metadata        JSONB            NOT NULL DEFAULT '{}',
+  created_at      TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMPTZ      NOT NULL DEFAULT NOW(),
+  CONSTRAINT restroom_locations_source_unique UNIQUE (source, source_id)
 );
 
-CREATE TABLE IF NOT EXISTS restroom_reviews (
-  id                    UUID          PRIMARY KEY DEFAULT gen_random_uuid(),
-  location_id           UUID          NOT NULL REFERENCES restroom_locations(id) ON DELETE CASCADE,
+CREATE TABLE restroom_reviews (
+  id                    UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  location_id           UUID        NOT NULL REFERENCES restroom_locations(id) ON DELETE CASCADE,
   user_id               UUID,
-  overall_rating        INTEGER       CHECK (overall_rating BETWEEN 1 AND 5),
-  cleanliness_rating    INTEGER       CHECK (cleanliness_rating BETWEEN 1 AND 5),
+  overall_rating        INTEGER     CHECK (overall_rating BETWEEN 1 AND 5),
+  cleanliness_rating    INTEGER     CHECK (cleanliness_rating BETWEEN 1 AND 5),
   bathroom_open         BOOLEAN,
   public_access         BOOLEAN,
   customers_only        BOOLEAN,
@@ -36,36 +46,24 @@ CREATE TABLE IF NOT EXISTS restroom_reviews (
   accessible            BOOLEAN,
   changing_table        BOOLEAN,
   notes                 TEXT,
-  created_at            TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-  updated_at            TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ── Indexes ─────────────────────────────────────────────────────────────────
+-- ── Indexes ──────────────────────────────────────────────────────────────────
 
--- PostGIS geography index for fast radius queries
-CREATE INDEX IF NOT EXISTS restroom_locations_geo_idx
+CREATE INDEX restroom_locations_geo_idx
   ON restroom_locations
   USING gist (ST_SetSRID(ST_MakePoint(lng, lat), 4326));
 
-CREATE INDEX IF NOT EXISTS restroom_reviews_location_idx
+CREATE INDEX restroom_reviews_location_idx
   ON restroom_reviews (location_id);
 
--- Unique constraint so the seed script can upsert safely without creating duplicates
-DO $$
-BEGIN
-  IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint WHERE conname = 'restroom_locations_source_unique'
-  ) THEN
-    ALTER TABLE restroom_locations
-      ADD CONSTRAINT restroom_locations_source_unique UNIQUE (source, source_id);
-  END IF;
-END $$;
-
 -- ── Summary view ─────────────────────────────────────────────────────────────
--- Aggregates all reviews per location. Locations with zero reviews will have
--- review_count = 0 and average_rating = NULL (not 0). Never treat NULL as bad.
+-- review_count = 0 and average_rating = NULL for unreviewed locations.
+-- Never treat NULL as bad.
 
-CREATE OR REPLACE VIEW restroom_location_summary AS
+CREATE VIEW restroom_location_summary AS
 SELECT
   rl.id,
   rl.name,
@@ -76,6 +74,7 @@ SELECT
   rl.lng,
   rl.source,
   rl.seeded,
+  rl.metadata,
   rl.created_at,
   rl.updated_at,
   COUNT(rr.id)::INT                               AS review_count,
@@ -87,28 +86,28 @@ LEFT JOIN restroom_reviews rr ON rr.location_id = rl.id
 GROUP BY rl.id;
 
 -- ── RPC: nearby_restroom_locations ───────────────────────────────────────────
--- Returns locations within radius_miles, ordered by distance.
 
-CREATE OR REPLACE FUNCTION nearby_restroom_locations(
+CREATE FUNCTION nearby_restroom_locations(
   user_lat     DOUBLE PRECISION,
   user_lng     DOUBLE PRECISION,
   radius_miles DOUBLE PRECISION DEFAULT 10
 )
 RETURNS TABLE (
-  id                        UUID,
-  name                      TEXT,
-  location_type             TEXT,
-  brand                     TEXT,
-  address                   TEXT,
-  lat                       DOUBLE PRECISION,
-  lng                       DOUBLE PRECISION,
-  source                    TEXT,
-  seeded                    BOOLEAN,
-  review_count              INT,
-  average_rating            NUMERIC,
+  id                         UUID,
+  name                       TEXT,
+  location_type              TEXT,
+  brand                      TEXT,
+  address                    TEXT,
+  lat                        DOUBLE PRECISION,
+  lng                        DOUBLE PRECISION,
+  source                     TEXT,
+  seeded                     BOOLEAN,
+  metadata                   JSONB,
+  review_count               INT,
+  average_rating             NUMERIC,
   average_cleanliness_rating NUMERIC,
-  last_reviewed_at          TIMESTAMPTZ,
-  distance_miles            DOUBLE PRECISION
+  last_reviewed_at           TIMESTAMPTZ,
+  distance_miles             DOUBLE PRECISION
 )
 LANGUAGE sql
 STABLE
@@ -123,6 +122,7 @@ AS $$
     s.lng,
     s.source,
     s.seeded,
+    s.metadata,
     s.review_count,
     s.average_rating,
     s.average_cleanliness_rating,
@@ -143,15 +143,10 @@ AS $$
   ORDER BY distance_miles ASC;
 $$;
 
--- ── RLS (enable and lock down) ───────────────────────────────────────────────
+-- ── RLS ──────────────────────────────────────────────────────────────────────
 
 ALTER TABLE restroom_locations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE restroom_reviews   ENABLE ROW LEVEL SECURITY;
-
-DROP POLICY IF EXISTS "public read locations"  ON restroom_locations;
-DROP POLICY IF EXISTS "public insert locations" ON restroom_locations;
-DROP POLICY IF EXISTS "public read reviews"    ON restroom_reviews;
-DROP POLICY IF EXISTS "auth insert reviews"    ON restroom_reviews;
 
 CREATE POLICY "public read locations"
   ON restroom_locations FOR SELECT USING (true);

@@ -25,6 +25,27 @@ export const LOCATION_TYPE_LABELS: Record<LocationType, string> = {
   unknown: 'Unknown',
 }
 
+export type LocationMetadata = {
+  // From OSM
+  opening_hours?: string
+  phone?: string
+  website?: string
+  wheelchair?: string
+  toilets_wheelchair?: string
+  operator?: string
+  brand_wikidata?: string
+  fee?: string
+  access?: string
+  osm_tags?: Record<string, string>
+  // From Google Places (future enrichment)
+  google_place_id?: string
+  google_rating?: number
+  google_photo_refs?: string[]
+  google_hours?: string[]
+  // Local / community
+  known_as?: string
+}
+
 export type RestroomLocation = {
   id: string
   name: string
@@ -38,6 +59,7 @@ export type RestroomLocation = {
   osm_type: string | null
   osm_id: string | null
   seeded: boolean
+  metadata: LocationMetadata
   created_at: string
   updated_at: string
 }
@@ -52,6 +74,7 @@ export type RestroomLocationSummary = {
   lng: number
   source: string | null
   seeded: boolean
+  metadata: LocationMetadata
   review_count: number
   average_rating: number | null
   average_cleanliness_rating: number | null
