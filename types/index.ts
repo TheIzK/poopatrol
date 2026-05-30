@@ -41,6 +41,7 @@ export type LocationMetadata = {
   google_place_id?: string
   google_rating?: number
   google_photo_refs?: string[]
+  google_photo_name?: string
   google_hours?: string[]
   // Local / community
   known_as?: string
