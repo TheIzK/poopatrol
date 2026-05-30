@@ -173,13 +173,17 @@ async function enrichLocation(loc: LocationRow): Promise<boolean> {
 
 // ── Core ──────────────────────────────────────────────────────────────────────
 
-async function fetchUnenriched(offset: number): Promise<LocationRow[]> {
-  const { data, error } = await supabase
+// Cursor-based pagination by id — stable even as rows get updated
+async function fetchPage(afterId: string | null): Promise<LocationRow[]> {
+  let query = supabase
     .from('restroom_locations')
     .select('id, name, lat, lng, metadata')
-    .is('metadata->google_place_id' as never, null)
-    .range(offset, offset + PAGE_SIZE - 1)
+    .order('id')
+    .limit(PAGE_SIZE)
 
+  if (afterId) query = query.gt('id', afterId)
+
+  const { data, error } = await query
   if (error) throw new Error(`Supabase fetch failed: ${error.message}`)
   return (data ?? []) as LocationRow[]
 }
@@ -188,16 +192,25 @@ async function main() {
   console.log('Starting Google Places enrichment…')
   console.log(`Match threshold: ${MAX_MATCH_METERS}m`)
 
-  let offset = 0
+  let lastId: string | null = null
   let totalProcessed = 0
+  let totalSkipped = 0
   let totalMatched = 0
   let apiCalls = 0
 
   while (true) {
-    const rows = await fetchUnenriched(offset)
+    const rows = await fetchPage(lastId)
     if (rows.length === 0) break
+    lastId = rows[rows.length - 1].id
 
     for (const loc of rows) {
+      // Skip already enriched — filter in JS since JSONB subkey IS NULL
+      // is unreliable in PostgREST
+      if (loc.metadata?.google_place_id) {
+        totalSkipped++
+        continue
+      }
+
       try {
         const matched = await enrichLocation(loc)
         apiCalls++
@@ -205,7 +218,7 @@ async function main() {
         if (matched) totalMatched++
 
         process.stdout.write(
-          `\r[${totalProcessed}] matched: ${totalMatched} | api calls: ${apiCalls} | last: ${loc.name.slice(0, 30).padEnd(30)}`
+          `\r[${totalProcessed} new, ${totalSkipped} skipped] matched: ${totalMatched} | last: ${loc.name.slice(0, 28).padEnd(28)}`
         )
       } catch (err) {
         console.error(`\nError on ${loc.name}: ${err instanceof Error ? err.message : err}`)
@@ -214,16 +227,13 @@ async function main() {
       await sleep(REQUEST_DELAY_MS)
     }
 
-    // If we matched some, offset doesn't advance the same way since matched rows
-    // drop out of the unenriched filter — refetch from 0 each page
     if (rows.length < PAGE_SIZE) break
-    // For unmatched rows that stay in the pool, we need to advance offset
-    offset += rows.length - totalMatched
   }
 
   console.log(`\n\nDone.`)
-  console.log(`  Processed: ${totalProcessed}`)
-  console.log(`  Matched:   ${totalMatched} (${Math.round((totalMatched / totalProcessed) * 100)}%)`)
+  console.log(`  Newly processed: ${totalProcessed}`)
+  console.log(`  Already had data: ${totalSkipped}`)
+  console.log(`  Matched:  ${totalMatched} (${totalProcessed > 0 ? Math.round((totalMatched / totalProcessed) * 100) : 0}%)`)
   console.log(`  API calls: ${apiCalls}`)
   console.log(`  Est. cost: ~$${(apiCalls * 0.032).toFixed(2)}`)
 }
