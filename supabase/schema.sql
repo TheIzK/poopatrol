@@ -148,19 +148,20 @@ $$;
 ALTER TABLE restroom_locations ENABLE ROW LEVEL SECURITY;
 ALTER TABLE restroom_reviews   ENABLE ROW LEVEL SECURITY;
 
--- Anyone can read locations
+DROP POLICY IF EXISTS "public read locations"  ON restroom_locations;
+DROP POLICY IF EXISTS "public insert locations" ON restroom_locations;
+DROP POLICY IF EXISTS "public read reviews"    ON restroom_reviews;
+DROP POLICY IF EXISTS "auth insert reviews"    ON restroom_reviews;
+
 CREATE POLICY "public read locations"
   ON restroom_locations FOR SELECT USING (true);
 
--- Anyone can insert a location (seeded=false enforced in app)
 CREATE POLICY "public insert locations"
   ON restroom_locations FOR INSERT WITH CHECK (true);
 
--- Anyone can read reviews
 CREATE POLICY "public read reviews"
   ON restroom_reviews FOR SELECT USING (true);
 
--- Authenticated users (including anonymous) can insert reviews
 CREATE POLICY "auth insert reviews"
   ON restroom_reviews FOR INSERT
   WITH CHECK (auth.uid() IS NOT NULL);
