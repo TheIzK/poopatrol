@@ -15,6 +15,7 @@ export default function LocationCard({ location }: Props) {
   const displayName = location.brand && location.brand !== location.name
     ? `${location.name} · ${location.brand}`
     : location.name
+  const meta = location.metadata ?? {}
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 flex flex-col gap-3">
@@ -34,14 +35,29 @@ export default function LocationCard({ location }: Props) {
         </span>
       </div>
 
+      {/* Metadata row — phone, hours, wheelchair */}
+      {(meta.phone || meta.opening_hours || meta.wheelchair) && (
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-gray-500">
+          {meta.phone && (
+            <a href={`tel:${meta.phone}`} className="hover:text-amber-600 transition-colors">
+              📞 {meta.phone}
+            </a>
+          )}
+          {meta.opening_hours && (
+            <span>🕐 {meta.opening_hours}</span>
+          )}
+          {meta.wheelchair === 'yes' && (
+            <span>♿ Accessible</span>
+          )}
+        </div>
+      )}
+
       {/* Stats row */}
       <div className="flex items-center gap-2 text-xs text-gray-400">
         <span>{Number(location.distance_miles).toFixed(1)} mi away</span>
-        <span>·</span>
-        {location.review_count === 0 ? (
-          <span>No reviews yet</span>
-        ) : (
+        {location.review_count > 0 && (
           <>
+            <span>·</span>
             <span>{location.review_count} review{location.review_count === 1 ? '' : 's'}</span>
             {location.average_rating !== null && (
               <>
@@ -50,9 +66,7 @@ export default function LocationCard({ location }: Props) {
                   {'★'.repeat(Math.round(location.average_rating))}
                   {'☆'.repeat(5 - Math.round(location.average_rating))}
                 </span>
-                <span className="text-gray-400">
-                  {Number(location.average_rating).toFixed(1)}
-                </span>
+                <span>{Number(location.average_rating).toFixed(1)}</span>
               </>
             )}
           </>
