@@ -79,8 +79,8 @@ export type RestroomLocationSummary = {
   metadata: LocationMetadata
   review_count: number
   average_rating: number | null
-  average_cleanliness_rating: number | null
   last_reviewed_at: string | null
+  top_tags: string[] | null
   distance_miles: number
 }
 

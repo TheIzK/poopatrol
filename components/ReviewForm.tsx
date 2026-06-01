@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { OverallRating } from '@/types'
+import { TAG_LABELS, NEGATIVE_TAGS } from '@/lib/tags'
 
 const RATINGS: { value: OverallRating; label: string }[] = [
   { value: 1, label: 'Terrible' },
@@ -13,16 +14,7 @@ const RATINGS: { value: OverallRating; label: string }[] = [
   { value: 5, label: 'Great' },
 ]
 
-type Tag =
-  | 'clean' | 'dirty'
-  | 'has_tp' | 'no_tp'
-  | 'has_soap' | 'no_soap'
-  | 'public' | 'customers_only'
-  | 'key_required'
-  | 'changing_table'
-  | 'accessible'
-
-type ChipDef = { key: Tag; label: string }
+type Tag = keyof typeof TAG_LABELS
 
 // Mutually exclusive pairs — selecting one clears the other
 const EXCLUSIVE_PAIRS: [Tag, Tag][] = [
@@ -32,22 +24,7 @@ const EXCLUSIVE_PAIRS: [Tag, Tag][] = [
   ['public', 'customers_only'],
 ]
 
-const CHIPS: ChipDef[] = [
-  { key: 'clean', label: 'Clean' },
-  { key: 'dirty', label: 'Dirty' },
-  { key: 'has_tp', label: 'Has TP' },
-  { key: 'no_tp', label: 'No TP' },
-  { key: 'has_soap', label: 'Has Soap' },
-  { key: 'no_soap', label: 'No Soap' },
-  { key: 'public', label: 'Public' },
-  { key: 'customers_only', label: 'Customers Only' },
-  { key: 'key_required', label: 'Key Required' },
-  { key: 'changing_table', label: 'Changing Table' },
-  { key: 'accessible', label: 'Accessible' },
-]
-
-// Chips that are negative observations — red when selected
-const NEGATIVE_TAGS = new Set<Tag>(['dirty', 'no_tp', 'no_soap', 'customers_only', 'key_required'])
+const CHIPS = Object.entries(TAG_LABELS).map(([key, label]) => ({ key: key as Tag, label }))
 
 type Props = {
   locationId: string
