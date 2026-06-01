@@ -6,38 +6,48 @@ import { supabase } from '@/lib/supabase'
 import { OverallRating } from '@/types'
 
 const RATINGS: { value: OverallRating; label: string }[] = [
-  { value: 1, label: 'Poor' },
-  { value: 2, label: 'Fair' },
+  { value: 1, label: 'Terrible' },
+  { value: 2, label: 'Bad' },
   { value: 3, label: 'Okay' },
   { value: 4, label: 'Good' },
-  { value: 5, label: 'Excellent' },
+  { value: 5, label: 'Great' },
 ]
 
-type BooleanField =
-  | 'bathroom_open'
-  | 'public_access'
-  | 'tp_available'
-  | 'soap_available'
-  | 'hand_dryer_or_towels'
-  | 'accessible'
-  | 'changing_table'
-  | 'customers_only'
+type Tag =
+  | 'clean' | 'dirty'
+  | 'has_tp' | 'no_tp'
+  | 'has_soap' | 'no_soap'
+  | 'public' | 'customers_only'
   | 'key_required'
+  | 'changing_table'
+  | 'accessible'
 
-const AMENITY_CHIPS: { key: BooleanField; label: string }[] = [
-  { key: 'bathroom_open', label: 'Bathroom Open' },
-  { key: 'public_access', label: 'Public Access' },
-  { key: 'tp_available', label: 'TP Available' },
-  { key: 'soap_available', label: 'Soap Available' },
-  { key: 'hand_dryer_or_towels', label: 'Hand Dryer/Towels' },
-  { key: 'accessible', label: 'Accessible' },
-  { key: 'changing_table', label: 'Changing Table' },
+type ChipDef = { key: Tag; label: string }
+
+// Mutually exclusive pairs — selecting one clears the other
+const EXCLUSIVE_PAIRS: [Tag, Tag][] = [
+  ['clean', 'dirty'],
+  ['has_tp', 'no_tp'],
+  ['has_soap', 'no_soap'],
+  ['public', 'customers_only'],
 ]
 
-const ISSUE_CHIPS: { key: BooleanField; label: string }[] = [
+const CHIPS: ChipDef[] = [
+  { key: 'clean', label: 'Clean' },
+  { key: 'dirty', label: 'Dirty' },
+  { key: 'has_tp', label: 'Has TP' },
+  { key: 'no_tp', label: 'No TP' },
+  { key: 'has_soap', label: 'Has Soap' },
+  { key: 'no_soap', label: 'No Soap' },
+  { key: 'public', label: 'Public' },
   { key: 'customers_only', label: 'Customers Only' },
   { key: 'key_required', label: 'Key Required' },
+  { key: 'changing_table', label: 'Changing Table' },
+  { key: 'accessible', label: 'Accessible' },
 ]
+
+// Chips that are negative observations — red when selected
+const NEGATIVE_TAGS = new Set<Tag>(['dirty', 'no_tp', 'no_soap', 'customers_only', 'key_required'])
 
 type Props = {
   locationId: string
@@ -48,10 +58,8 @@ type AuthStep = 'form' | 'magic-link'
 
 export default function ReviewForm({ locationId, locationName }: Props) {
   const router = useRouter()
-  const [overallRating, setOverallRating] = useState<OverallRating | null>(null)
-  const [cleanlinessRating, setCleanlinessRating] = useState<OverallRating | null>(null)
-  const [checkedFields, setCheckedFields] = useState<Set<BooleanField>>(new Set())
-  const [notes, setNotes] = useState('')
+  const [rating, setRating] = useState<OverallRating | null>(null)
+  const [tags, setTags] = useState<Set<Tag>>(new Set())
   const [authStep, setAuthStep] = useState<AuthStep>('form')
   const [email, setEmail] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -59,19 +67,25 @@ export default function ReviewForm({ locationId, locationName }: Props) {
   const [signedInAs, setSignedInAs] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  // Surface existing session in the UI so user knows they don't need to re-auth
   useEffect(() => {
     supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user) {
-        setSignedInAs(user.email ?? (user.is_anonymous ? 'anonymous' : user.id.slice(0, 8)))
-      }
+      if (user?.email) setSignedInAs(user.email)
     })
   }, [])
 
-  function toggleField(field: BooleanField) {
-    setCheckedFields(prev => {
+  function toggleTag(tag: Tag) {
+    setTags(prev => {
       const next = new Set(prev)
-      next.has(field) ? next.delete(field) : next.add(field)
+      if (next.has(tag)) {
+        next.delete(tag)
+        return next
+      }
+      // Clear the exclusive counterpart if present
+      for (const [a, b] of EXCLUSIVE_PAIRS) {
+        if (tag === a) next.delete(b)
+        if (tag === b) next.delete(a)
+      }
+      next.add(tag)
       return next
     })
   }
@@ -79,47 +93,28 @@ export default function ReviewForm({ locationId, locationName }: Props) {
   async function ensureAuth(): Promise<string | null> {
     const { data: { user } } = await supabase.auth.getUser()
     if (user) return user.id
-
-    const { data: anonData, error: anonError } = await supabase.auth.signInAnonymously()
-    if (!anonError && anonData.user) {
-      setSignedInAs('anonymous')
-      return anonData.user.id
-    }
-
+    const { data, error: anonErr } = await supabase.auth.signInAnonymously()
+    if (!anonErr && data.user) return data.user.id
     setAuthStep('magic-link')
     return null
   }
 
-  async function submitReview(userId: string) {
-    const boolFields: Partial<Record<BooleanField, boolean>> = {}
-    for (const field of checkedFields) {
-      boolFields[field] = true
-    }
-
-    const { error: insertError } = await supabase.from('restroom_reviews').insert({
-      location_id: locationId,
-      user_id: userId,
-      overall_rating: overallRating,
-      cleanliness_rating: cleanlinessRating ?? null,
-      notes: notes.trim() || null,
-      ...boolFields,
-    })
-
-    if (insertError) throw insertError
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!overallRating) {
-      setError('Please select an overall rating.')
-      return
-    }
+    if (!rating) { setError('Please select a rating.'); return }
     setError(null)
     setSubmitting(true)
     try {
       const userId = await ensureAuth()
       if (!userId) return
-      await submitReview(userId)
+
+      const { error: insertError } = await supabase.from('restroom_reviews').insert({
+        location_id: locationId,
+        user_id: userId,
+        overall_rating: rating,
+        tags: Array.from(tags),
+      })
+      if (insertError) throw insertError
       router.push('/?submitted=1')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.')
@@ -183,123 +178,67 @@ export default function ReviewForm({ locationId, locationName }: Props) {
 
   return (
     <form onSubmit={handleSubmit} className="p-4 max-w-md mx-auto flex flex-col gap-6 pb-10">
-      {/* Location name */}
+      {/* Location */}
       <div>
-        <p className="text-xs uppercase tracking-wide text-gray-400 font-semibold mb-1">Reviewing</p>
-        <p className="font-semibold text-gray-900">{locationName}</p>
-        {signedInAs && signedInAs !== 'anonymous' && (
-          <p className="text-xs text-gray-400 mt-1">Signed in as {signedInAs}</p>
+        <p className="text-xs uppercase tracking-wide text-gray-400 font-semibold mb-0.5">Reviewing</p>
+        <p className="font-semibold text-gray-900 text-lg">{locationName}</p>
+        {signedInAs && (
+          <p className="text-xs text-gray-400 mt-0.5">Signed in as {signedInAs}</p>
         )}
       </div>
 
-      {/* Overall Rating (required) */}
+      {/* Rating */}
       <div>
-        <p className="text-sm font-semibold text-gray-700 mb-2">
-          Overall Rating <span className="text-red-500">*</span>
+        <p className="text-sm font-semibold text-gray-700 mb-3">
+          How was the bathroom? <span className="text-red-500">*</span>
         </p>
         <div className="flex gap-2">
           {RATINGS.map(r => (
             <button
               key={r.value}
               type="button"
-              onClick={() => setOverallRating(r.value)}
+              onClick={() => setRating(r.value)}
               className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-xl border-2 transition-colors ${
-                overallRating === r.value
+                rating === r.value
                   ? 'border-amber-500 bg-amber-50'
                   : 'border-gray-200 bg-white'
               }`}
             >
-              <span className={`text-lg font-bold ${overallRating === r.value ? 'text-amber-600' : 'text-gray-400'}`}>
+              <span className={`text-lg font-bold leading-none ${rating === r.value ? 'text-amber-600' : 'text-gray-400'}`}>
                 {r.value}
               </span>
-              <span className="text-xs text-gray-600 text-center leading-tight">{r.label}</span>
+              <span className="text-xs text-gray-600 leading-tight text-center">{r.label}</span>
             </button>
           ))}
         </div>
       </div>
 
-      {/* Cleanliness Rating (optional) */}
+      {/* Chips */}
       <div>
-        <p className="text-sm font-semibold text-gray-700 mb-2">
-          Cleanliness <span className="text-gray-400 font-normal">(optional)</span>
-        </p>
-        <div className="flex gap-2">
-          {RATINGS.map(r => (
-            <button
-              key={r.value}
-              type="button"
-              onClick={() => setCleanlinessRating(prev => prev === r.value ? null : r.value)}
-              className={`flex-1 flex flex-col items-center gap-1 py-2 rounded-xl border-2 transition-colors ${
-                cleanlinessRating === r.value
-                  ? 'border-blue-400 bg-blue-50'
-                  : 'border-gray-200 bg-white'
-              }`}
-            >
-              <span className={`text-sm font-bold ${cleanlinessRating === r.value ? 'text-blue-600' : 'text-gray-400'}`}>
-                {r.value}
-              </span>
-              <span className="text-xs text-gray-500 text-center leading-tight">{r.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Amenity chips */}
-      <div>
-        <p className="text-sm font-semibold text-gray-700 mb-2">What&apos;s available?</p>
-        <p className="text-xs text-gray-400 mb-2">Only check what you observed — unchecked means unknown.</p>
+        <p className="text-sm font-semibold text-gray-700 mb-1">Tap anything you noticed</p>
+        <p className="text-xs text-gray-400 mb-3">Unselected = unknown. Only tap what you actually saw.</p>
         <div className="flex flex-wrap gap-2">
-          {AMENITY_CHIPS.map(c => (
-            <button
-              key={c.key}
-              type="button"
-              onClick={() => toggleField(c.key)}
-              className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
-                checkedFields.has(c.key)
-                  ? 'bg-green-100 border-green-400 text-green-800 font-medium'
-                  : 'bg-white border-gray-300 text-gray-600'
-              }`}
-            >
-              {checkedFields.has(c.key) ? '✓ ' : ''}{c.label}
-            </button>
-          ))}
+          {CHIPS.map(c => {
+            const selected = tags.has(c.key)
+            const negative = NEGATIVE_TAGS.has(c.key)
+            return (
+              <button
+                key={c.key}
+                type="button"
+                onClick={() => toggleTag(c.key)}
+                className={`px-3 py-2 rounded-full text-sm border transition-colors font-medium ${
+                  selected
+                    ? negative
+                      ? 'bg-red-100 border-red-400 text-red-800'
+                      : 'bg-green-100 border-green-400 text-green-800'
+                    : 'bg-white border-gray-300 text-gray-600'
+                }`}
+              >
+                {selected ? '✓ ' : ''}{c.label}
+              </button>
+            )
+          })}
         </div>
-      </div>
-
-      {/* Issue chips */}
-      <div>
-        <p className="text-sm font-semibold text-gray-700 mb-2">Any restrictions?</p>
-        <div className="flex flex-wrap gap-2">
-          {ISSUE_CHIPS.map(c => (
-            <button
-              key={c.key}
-              type="button"
-              onClick={() => toggleField(c.key)}
-              className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
-                checkedFields.has(c.key)
-                  ? 'bg-red-100 border-red-400 text-red-800 font-medium'
-                  : 'bg-white border-gray-300 text-gray-600'
-              }`}
-            >
-              {checkedFields.has(c.key) ? '✓ ' : ''}{c.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Notes */}
-      <div>
-        <p className="text-sm font-semibold text-gray-700 mb-2">
-          Notes <span className="text-gray-400 font-normal">(optional)</span>
-        </p>
-        <textarea
-          value={notes}
-          onChange={e => setNotes(e.target.value)}
-          placeholder="Anything else worth knowing…"
-          rows={3}
-          maxLength={500}
-          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400 resize-none"
-        />
       </div>
 
       {error && <p className="text-red-500 text-sm">{error}</p>}

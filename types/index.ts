@@ -84,22 +84,21 @@ export type RestroomLocationSummary = {
   distance_miles: number
 }
 
+export type ReviewTag =
+  | 'clean' | 'dirty'
+  | 'has_tp' | 'no_tp'
+  | 'has_soap' | 'no_soap'
+  | 'public' | 'customers_only'
+  | 'key_required'
+  | 'changing_table'
+  | 'accessible'
+
 export type RestroomReview = {
   id: string
   location_id: string
   user_id: string | null
   overall_rating: 1 | 2 | 3 | 4 | 5
-  cleanliness_rating: (1 | 2 | 3 | 4 | 5) | null
-  bathroom_open: boolean | null
-  public_access: boolean | null
-  customers_only: boolean | null
-  key_required: boolean | null
-  tp_available: boolean | null
-  soap_available: boolean | null
-  hand_dryer_or_towels: boolean | null
-  accessible: boolean | null
-  changing_table: boolean | null
-  notes: string | null
+  tags: ReviewTag[]
   created_at: string
   updated_at: string
 }

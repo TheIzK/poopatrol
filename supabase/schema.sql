@@ -35,6 +35,7 @@ CREATE TABLE restroom_reviews (
   location_id           UUID        NOT NULL REFERENCES restroom_locations(id) ON DELETE CASCADE,
   user_id               UUID,
   overall_rating        INTEGER     CHECK (overall_rating BETWEEN 1 AND 5),
+  tags                  TEXT[]      NOT NULL DEFAULT '{}',
   cleanliness_rating    INTEGER     CHECK (cleanliness_rating BETWEEN 1 AND 5),
   bathroom_open         BOOLEAN,
   public_access         BOOLEAN,
