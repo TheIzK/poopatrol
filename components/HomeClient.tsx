@@ -29,12 +29,9 @@ type Filter = 'all' | 'reviewed' | 'gas_station' | 'rest_stop'
 type RadiusOption = { label: string; value: number; display: string }
 
 const RADIUS_OPTIONS: RadiusOption[] = [
-  { label: '1 mi',   value: 1,   display: 'within 1 mile' },
-  { label: '5 mi',   value: 5,   display: 'within 5 miles' },
-  { label: '10 mi',  value: 10,  display: 'within 10 miles' },
-  { label: '25 mi',  value: 25,  display: 'within 25 miles' },
-  { label: '50 mi',  value: 50,  display: 'within 50 miles' },
-  { label: '100 mi', value: 100, display: 'within 100 miles' },
+  { label: '1 mi',  value: 1,  display: 'within 1 mile' },
+  { label: '5 mi',  value: 5,  display: 'within 5 miles' },
+  { label: '10 mi', value: 10, display: 'within 10 miles' },
 ]
 
 const FILTERS: { key: Filter; label: string }[] = [

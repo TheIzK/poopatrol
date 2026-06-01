@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
+import 'leaflet/dist/leaflet.css'
 import { RestroomLocationSummary } from '@/types'
 import { getRestroomStatus, STATUS_LABEL } from '@/lib/status'
 import { getNavigationUrl } from '@/lib/navigation'
@@ -13,9 +14,9 @@ type Props = {
 
 const STATUS_COLORS = {
   unknown: '#9ca3af',
-  good: '#16a34a',
-  okay: '#d97706',
-  bad: '#dc2626',
+  good:    '#16a34a',
+  okay:    '#d97706',
+  bad:     '#dc2626',
 }
 
 function esc(s: string): string {
@@ -32,7 +33,6 @@ export default function MapView({ locations, userLat, userLng }: Props) {
     import('leaflet').then(L => {
       if (!containerRef.current || mapRef.current) return
 
-      // Fix default icon paths (broken in webpack)
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       delete (L.Icon.Default.prototype as any)._getIconUrl
 
@@ -48,7 +48,7 @@ export default function MapView({ locations, userLat, userLng }: Props) {
         maxZoom: 19,
       }).addTo(map)
 
-      // User location marker
+      // User location dot
       L.circleMarker([userLat, userLng], {
         radius: 7,
         fillColor: '#3b82f6',
@@ -60,7 +60,7 @@ export default function MapView({ locations, userLat, userLng }: Props) {
       // Location markers
       for (const loc of locations) {
         const status = getRestroomStatus(loc.review_count, loc.average_rating)
-        const color = STATUS_COLORS[status]
+        const color  = STATUS_COLORS[status]
 
         const icon = L.divIcon({
           className: '',
@@ -77,7 +77,7 @@ export default function MapView({ locations, userLat, userLng }: Props) {
         const popup = `
           <div style="min-width:180px;font-family:sans-serif;font-size:13px">
             <div style="font-weight:600;margin-bottom:2px">${esc(loc.name)}</div>
-            <div style="color:#6b7280;margin-bottom:4px">${Number(loc.distance_miles).toFixed(1)} mi · ${STATUS_LABEL[status]}</div>
+            <div style="color:#6b7280;margin-bottom:6px">${Number(loc.distance_miles).toFixed(1)} mi · ${STATUS_LABEL[status]}</div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               <a href="${googleUrl}" target="_blank" rel="noopener noreferrer"
                 style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;text-decoration:none;color:#374151;font-size:12px">
@@ -110,5 +110,11 @@ export default function MapView({ locations, userLat, userLng }: Props) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  return <div ref={containerRef} className="w-full h-full" />
+  // Explicit px height so Leaflet can measure the container on init
+  return (
+    <div
+      ref={containerRef}
+      style={{ height: 'calc(100dvh - 56px)', width: '100%' }}
+    />
+  )
 }
