@@ -62,17 +62,19 @@ export default function LocationCard({ location }: Props) {
         {/* Header row */}
         <div className="flex items-start justify-between gap-2">
           <div className="flex items-start gap-2 flex-1 min-w-0">
-            {/* Brand logo or type emoji */}
-            {logoUrl ? (
-              <img
-                src={logoUrl}
-                alt={location.brand ?? ''}
-                className="w-8 h-8 rounded object-contain shrink-0 mt-0.5"
-                onError={() => setLogoError(true)}
-                loading="lazy"
-              />
-            ) : (
-              <span className="text-xl shrink-0 mt-0.5" aria-hidden>{typeEmoji}</span>
+            {/* Brand logo or type emoji — only show if no photo banner */}
+            {!photoUrl && (
+              logoUrl ? (
+                <img
+                  src={logoUrl}
+                  alt={location.brand ?? ''}
+                  className="w-8 h-8 rounded object-contain shrink-0 mt-0.5"
+                  onError={() => setLogoError(true)}
+                  loading="lazy"
+                />
+              ) : (
+                <span className="text-xl shrink-0 mt-0.5" aria-hidden>{typeEmoji}</span>
+              )
             )}
             <div className="min-w-0">
               <h2 className="font-semibold text-gray-900 text-base leading-tight">
