@@ -1,10 +1,23 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { OverallRating } from '@/types'
 import { TAG_LABELS, NEGATIVE_TAGS } from '@/lib/tags'
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (el: HTMLElement, opts: {
+        sitekey: string
+        callback: (token: string) => void
+        'expired-callback': () => void
+        'error-callback': () => void
+      }) => string
+    }
+  }
+}
 
 const RATINGS: { value: OverallRating; label: string }[] = [
   { value: 1, label: 'Terrible' },
@@ -16,7 +29,6 @@ const RATINGS: { value: OverallRating; label: string }[] = [
 
 type Tag = keyof typeof TAG_LABELS
 
-// Mutually exclusive pairs — selecting one clears the other
 const EXCLUSIVE_PAIRS: [Tag, Tag][] = [
   ['clean', 'dirty'],
   ['has_tp', 'no_tp'],
@@ -31,33 +43,48 @@ type Props = {
   locationName: string
 }
 
-type AuthStep = 'form' | 'magic-link'
-
 export default function ReviewForm({ locationId, locationName }: Props) {
   const router = useRouter()
   const [rating, setRating] = useState<OverallRating | null>(null)
   const [tags, setTags] = useState<Set<Tag>>(new Set())
-  const [authStep, setAuthStep] = useState<AuthStep>('form')
-  const [email, setEmail] = useState('')
   const [submitting, setSubmitting] = useState(false)
-  const [magicLinkSent, setMagicLinkSent] = useState(false)
-  const [signedInAs, setSignedInAs] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [accessToken, setAccessToken] = useState<string | null>(null)
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
+  const turnstileRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data: { user } }) => {
-      if (user?.email) setSignedInAs(user.email)
-    })
+    async function initAuth() {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session) { setAccessToken(session.access_token); return }
+      const { data } = await supabase.auth.signInAnonymously()
+      if (data.session) setAccessToken(data.session.access_token)
+    }
+    initAuth()
+  }, [])
+
+  useEffect(() => {
+    const script = document.createElement('script')
+    script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
+    script.async = true
+    script.onload = () => {
+      if (turnstileRef.current && window.turnstile) {
+        window.turnstile.render(turnstileRef.current, {
+          sitekey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!,
+          callback: (token) => setTurnstileToken(token),
+          'expired-callback': () => setTurnstileToken(null),
+          'error-callback': () => setTurnstileToken(null),
+        })
+      }
+    }
+    document.head.appendChild(script)
+    return () => { document.head.removeChild(script) }
   }, [])
 
   function toggleTag(tag: Tag) {
     setTags(prev => {
       const next = new Set(prev)
-      if (next.has(tag)) {
-        next.delete(tag)
-        return next
-      }
-      // Clear the exclusive counterpart if present
+      if (next.has(tag)) { next.delete(tag); return next }
       for (const [a, b] of EXCLUSIVE_PAIRS) {
         if (tag === a) next.delete(b)
         if (tag === b) next.delete(a)
@@ -67,31 +94,27 @@ export default function ReviewForm({ locationId, locationName }: Props) {
     })
   }
 
-  async function ensureAuth(): Promise<string | null> {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) return user.id
-    const { data, error: anonErr } = await supabase.auth.signInAnonymously()
-    if (!anonErr && data.user) return data.user.id
-    setAuthStep('magic-link')
-    return null
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!rating) { setError('Please select a rating.'); return }
+    if (!turnstileToken) { setError('Bot check not complete. Please wait a moment.'); return }
+    if (!accessToken) { setError('Session not ready. Please refresh and try again.'); return }
+
     setError(null)
     setSubmitting(true)
-    try {
-      const userId = await ensureAuth()
-      if (!userId) return
 
-      const { error: insertError } = await supabase.from('restroom_reviews').insert({
-        location_id: locationId,
-        user_id: userId,
-        overall_rating: rating,
-        tags: Array.from(tags),
+    try {
+      const res = await fetch('/api/review', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`,
+        },
+        body: JSON.stringify({ turnstileToken, locationId, rating, tags: Array.from(tags) }),
       })
-      if (insertError) throw insertError
+
+      const body = await res.json()
+      if (!res.ok) throw new Error(body.error ?? 'Something went wrong.')
       router.push('/?submitted=1')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Something went wrong.')
@@ -100,71 +123,13 @@ export default function ReviewForm({ locationId, locationName }: Props) {
     }
   }
 
-  async function handleMagicLink(e: React.FormEvent) {
-    e.preventDefault()
-    setSubmitting(true)
-    setError(null)
-    try {
-      const { error: linkError } = await supabase.auth.signInWithOtp({
-        email,
-        options: { shouldCreateUser: true },
-      })
-      if (linkError) throw linkError
-      setMagicLinkSent(true)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to send magic link.')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  if (authStep === 'magic-link') {
-    return (
-      <div className="p-4 max-w-md mx-auto">
-        <h2 className="text-lg font-semibold mb-1">Sign in to submit</h2>
-        <p className="text-sm text-gray-500 mb-4">
-          We&apos;ll email you a magic link — no password, and you&apos;ll stay signed in for future reviews.
-        </p>
-        {magicLinkSent ? (
-          <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-green-800 text-sm">
-            Check your email and click the link to sign in. You&apos;ll be brought back here automatically.
-          </div>
-        ) : (
-          <form onSubmit={handleMagicLink} className="flex flex-col gap-3">
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-400"
-            />
-            {error && <p className="text-red-500 text-sm">{error}</p>}
-            <button
-              type="submit"
-              disabled={submitting}
-              className="bg-amber-500 text-white py-2 px-4 rounded-lg font-medium text-sm disabled:opacity-50"
-            >
-              {submitting ? 'Sending…' : 'Send Magic Link'}
-            </button>
-          </form>
-        )}
-      </div>
-    )
-  }
-
   return (
     <form onSubmit={handleSubmit} className="p-4 max-w-md mx-auto flex flex-col gap-6 pb-10">
-      {/* Location */}
       <div>
         <p className="text-xs uppercase tracking-wide text-gray-400 font-semibold mb-0.5">Reviewing</p>
         <p className="font-semibold text-gray-900 text-lg">{locationName}</p>
-        {signedInAs && (
-          <p className="text-xs text-gray-400 mt-0.5">Signed in as {signedInAs}</p>
-        )}
       </div>
 
-      {/* Rating */}
       <div>
         <p className="text-sm font-semibold text-gray-700 mb-3">
           How was the bathroom? <span className="text-red-500">*</span>
@@ -176,9 +141,7 @@ export default function ReviewForm({ locationId, locationName }: Props) {
               type="button"
               onClick={() => setRating(r.value)}
               className={`flex-1 flex flex-col items-center gap-1 py-3 rounded-xl border-2 transition-colors ${
-                rating === r.value
-                  ? 'border-amber-500 bg-amber-50'
-                  : 'border-gray-200 bg-white'
+                rating === r.value ? 'border-amber-500 bg-amber-50' : 'border-gray-200 bg-white'
               }`}
             >
               <span className={`text-lg font-bold leading-none ${rating === r.value ? 'text-amber-600' : 'text-gray-400'}`}>
@@ -190,7 +153,6 @@ export default function ReviewForm({ locationId, locationName }: Props) {
         </div>
       </div>
 
-      {/* Chips */}
       <div>
         <p className="text-sm font-semibold text-gray-700 mb-1">Tap anything you noticed</p>
         <p className="text-xs text-gray-400 mb-3">Unselected = unknown. Only tap what you actually saw.</p>
@@ -218,14 +180,16 @@ export default function ReviewForm({ locationId, locationName }: Props) {
         </div>
       </div>
 
+      <div ref={turnstileRef} />
+
       {error && <p className="text-red-500 text-sm">{error}</p>}
 
       <button
         type="submit"
-        disabled={submitting}
+        disabled={submitting || !turnstileToken || !accessToken}
         className="w-full bg-amber-500 text-white py-3 rounded-xl font-semibold text-base disabled:opacity-50 hover:bg-amber-600 active:bg-amber-700 transition-colors"
       >
-        {submitting ? 'Submitting…' : 'Submit Review'}
+        {submitting ? 'Submitting…' : !turnstileToken ? 'Verifying…' : 'Submit Review'}
       </button>
     </form>
   )
