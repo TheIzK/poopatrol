@@ -38,6 +38,8 @@ const EXCLUSIVE_PAIRS: [Tag, Tag][] = [
 
 const CHIPS = Object.entries(TAG_LABELS).map(([key, label]) => ({ key: key as Tag, label }))
 
+type AuthState = 'loading' | 'unauthenticated' | 'link_sent' | 'authenticated'
+
 type Props = {
   locationId: string
   locationName: string
@@ -45,25 +47,44 @@ type Props = {
 
 export default function ReviewForm({ locationId, locationName }: Props) {
   const router = useRouter()
+  const [authState, setAuthState] = useState<AuthState>('loading')
+  const [email, setEmail] = useState('')
+  const [emailError, setEmailError] = useState<string | null>(null)
+  const [sendingLink, setSendingLink] = useState(false)
+  const [accessToken, setAccessToken] = useState<string | null>(null)
+
   const [rating, setRating] = useState<OverallRating | null>(null)
   const [tags, setTags] = useState<Set<Tag>>(new Set())
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [accessToken, setAccessToken] = useState<string | null>(null)
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null)
   const turnstileRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    async function initAuth() {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session) { setAccessToken(session.access_token); return }
-      const { data } = await supabase.auth.signInAnonymously()
-      if (data.session) setAccessToken(data.session.access_token)
-    }
-    initAuth()
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        setAccessToken(session.access_token)
+        setAuthState('authenticated')
+      } else {
+        setAuthState('unauthenticated')
+      }
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        setAccessToken(session.access_token)
+        setAuthState('authenticated')
+      } else {
+        setAuthState('unauthenticated')
+      }
+    })
+
+    return () => subscription.unsubscribe()
   }, [])
 
   useEffect(() => {
+    if (authState !== 'authenticated') return
+
     const script = document.createElement('script')
     script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
     script.async = true
@@ -79,7 +100,26 @@ export default function ReviewForm({ locationId, locationName }: Props) {
     }
     document.head.appendChild(script)
     return () => { document.head.removeChild(script) }
-  }, [])
+  }, [authState])
+
+  async function handleSendLink(e: React.FormEvent) {
+    e.preventDefault()
+    setEmailError(null)
+    setSendingLink(true)
+    const next = encodeURIComponent(`/review/${locationId}?name=${encodeURIComponent(locationName)}`)
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback?next=${next}`,
+      },
+    })
+    setSendingLink(false)
+    if (error) {
+      setEmailError(error.message)
+    } else {
+      setAuthState('link_sent')
+    }
+  }
 
   function toggleTag(tag: Tag) {
     setTags(prev => {
@@ -121,6 +161,64 @@ export default function ReviewForm({ locationId, locationName }: Props) {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  if (authState === 'loading') {
+    return <p className="p-4 text-gray-400 text-sm">Loading…</p>
+  }
+
+  if (authState === 'link_sent') {
+    return (
+      <div className="p-4 max-w-md mx-auto pt-12 text-center flex flex-col gap-4">
+        <p className="text-4xl">📬</p>
+        <p className="font-semibold text-gray-900 text-lg">Check your email</p>
+        <p className="text-sm text-gray-500">
+          We sent a sign-in link to <span className="font-medium text-gray-700">{email}</span>.
+          Click it and you&apos;ll be brought right back here.
+        </p>
+        <button
+          onClick={() => setAuthState('unauthenticated')}
+          className="text-sm text-amber-600 hover:text-amber-700 mt-2"
+        >
+          Use a different email
+        </button>
+      </div>
+    )
+  }
+
+  if (authState === 'unauthenticated') {
+    return (
+      <div className="p-4 max-w-md mx-auto pt-8 flex flex-col gap-6">
+        <div>
+          <p className="text-xs uppercase tracking-wide text-gray-400 font-semibold mb-0.5">Reviewing</p>
+          <p className="font-semibold text-gray-900 text-lg">{locationName}</p>
+        </div>
+        <div>
+          <p className="font-semibold text-gray-900 mb-1">Sign in to leave a review</p>
+          <p className="text-sm text-gray-500 mb-4">
+            We&apos;ll send you a one-time link. No password needed, and you&apos;ll stay signed in.
+          </p>
+          <form onSubmit={handleSendLink} className="flex flex-col gap-3">
+            <input
+              type="email"
+              required
+              placeholder="you@example.com"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-amber-400"
+            />
+            {emailError && <p className="text-red-500 text-sm">{emailError}</p>}
+            <button
+              type="submit"
+              disabled={sendingLink}
+              className="w-full bg-amber-500 text-white py-3 rounded-xl font-semibold text-base disabled:opacity-50 hover:bg-amber-600 active:bg-amber-700 transition-colors"
+            >
+              {sendingLink ? 'Sending…' : 'Send sign-in link'}
+            </button>
+          </form>
+        </div>
+      </div>
+    )
   }
 
   return (
