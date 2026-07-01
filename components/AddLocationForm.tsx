@@ -28,11 +28,26 @@ export default function AddLocationForm() {
     lat: '',
     lng: '',
   })
+  const [authState, setAuthState] = useState<'loading' | 'unauthenticated' | 'link_sent' | 'authenticated'>('loading')
+  const [email, setEmail] = useState('')
+  const [emailError, setEmailError] = useState<string | null>(null)
+  const [sendingLink, setSendingLink] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [locating, setLocating] = useState(false)
 
   useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setAuthState(session ? 'authenticated' : 'unauthenticated')
+    })
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setAuthState(session ? 'authenticated' : 'unauthenticated')
+    })
+    return () => subscription.unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    if (authState !== 'authenticated') return
     if (!navigator.geolocation) return
     setLocating(true)
     navigator.geolocation.getCurrentPosition(
@@ -47,18 +62,24 @@ export default function AddLocationForm() {
       () => setLocating(false),
       { timeout: 8000 }
     )
-  }, [])
+  }, [authState])
 
   function set(field: keyof AddLocationFormData, value: string) {
     setForm(f => ({ ...f, [field]: value }))
   }
 
-  async function ensureAuth(): Promise<string | null> {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (user) return user.id
-    const { data, error: anonErr } = await supabase.auth.signInAnonymously()
-    if (!anonErr && data.user) return data.user.id
-    return null
+  async function handleSendLink(e: React.FormEvent) {
+    e.preventDefault()
+    setEmailError(null)
+    setSendingLink(true)
+    const next = encodeURIComponent('/add-bathroom')
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=${next}` },
+    })
+    setSendingLink(false)
+    if (error) setEmailError(error.message)
+    else setAuthState('link_sent')
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -74,7 +95,6 @@ export default function AddLocationForm() {
     setError(null)
     setSubmitting(true)
     try {
-      const userId = await ensureAuth()
       const { error: insertError } = await supabase.from('restroom_locations').insert({
         name: form.name.trim(),
         location_type: form.location_type,
@@ -85,7 +105,6 @@ export default function AddLocationForm() {
         source: 'user_submitted',
         source_id: null,
         seeded: false,
-        ...(userId ? { created_by: userId } : {}),
       })
       if (insertError) throw insertError
       router.push('/?added=1')
@@ -94,6 +113,55 @@ export default function AddLocationForm() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  if (authState === 'loading') {
+    return <p className="p-4 text-gray-400 text-sm">Loading…</p>
+  }
+
+  if (authState === 'link_sent') {
+    return (
+      <div className="p-4 max-w-md mx-auto pt-12 text-center flex flex-col gap-4">
+        <p className="text-4xl">📬</p>
+        <p className="font-semibold text-gray-900 text-lg">Check your email</p>
+        <p className="text-sm text-gray-500">
+          We sent a sign-in link to <span className="font-medium text-gray-700">{email}</span>.
+          Click it and you&apos;ll be brought right back here.
+        </p>
+        <button onClick={() => setAuthState('unauthenticated')} className="text-sm text-amber-600 hover:text-amber-700 mt-2">
+          Use a different email
+        </button>
+      </div>
+    )
+  }
+
+  if (authState === 'unauthenticated') {
+    return (
+      <div className="p-4 max-w-md mx-auto pt-8 flex flex-col gap-6">
+        <div>
+          <p className="font-semibold text-gray-900 mb-1">Sign in to add a location</p>
+          <p className="text-sm text-gray-500 mb-4">We&apos;ll send you a one-time link. No password needed, and you&apos;ll stay signed in.</p>
+          <form onSubmit={handleSendLink} className="flex flex-col gap-3">
+            <input
+              type="email"
+              required
+              placeholder="you@example.com"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:outline-none focus:ring-2 focus:ring-amber-400"
+            />
+            {emailError && <p className="text-red-500 text-sm">{emailError}</p>}
+            <button
+              type="submit"
+              disabled={sendingLink}
+              className="w-full bg-amber-500 text-white py-3 rounded-xl font-semibold text-base disabled:opacity-50 hover:bg-amber-600 active:bg-amber-700 transition-colors"
+            >
+              {sendingLink ? 'Sending…' : 'Send sign-in link'}
+            </button>
+          </form>
+        </div>
+      </div>
+    )
   }
 
   return (
