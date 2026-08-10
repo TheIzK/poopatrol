@@ -2,11 +2,11 @@
 
 Find clean bathrooms near interstate exits.
 
-A crowdsourced map for road trips: pull up nearby exits, see which gas
-stations and rest stops have decent bathrooms, and add tags like
-clean/dirty, has TP, key required, or accessible based on your own stop.
-Locations are enriched with brand data (Shell, BP, Chevron, etc.) and
-seeded from OpenStreetMap and Google Places.
+A crowdsourced map for road trips. Pull up nearby exits, see which gas
+stations and rest stops have decent bathrooms, and rate one yourself
+after you stop: clean or dirty, has TP, key required, accessible, and so
+on. Locations are seeded from OpenStreetMap and Google Places and tagged
+with brand data (Shell, BP, Chevron, etc.) where available.
 
 Live at [poopatrol.vercel.app](https://poopatrol.vercel.app).
 
